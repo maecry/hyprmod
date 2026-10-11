@@ -10,6 +10,8 @@ from pathlib import Path
 import hyprland_config
 from hyprland_config import Rule
 
+from hyprmod.core import config
+
 
 @dataclass(frozen=True, slots=True)
 class ExternalKeywordEntry:
@@ -52,6 +54,7 @@ def load_external_keyword_entries(
         managed_resolved = managed_path.resolve()
     except OSError:
         managed_resolved = managed_path
+    owned = config.managed_keyword_counts()
     external: list[ExternalKeywordEntry] = []
     for keyword in keywords:
         for entry in doc.find_all(keyword):
@@ -60,6 +63,8 @@ def load_external_keyword_entries(
                 entry_resolved = entry_path.resolve()
             except OSError:
                 entry_resolved = entry_path
+            if config.consume_owned(owned, (entry.key, entry.value)):
+                continue
             if entry_resolved == managed_resolved:
                 continue
             external.append(
@@ -110,6 +115,7 @@ def load_external_rule_entries(
     except OSError:
         managed_resolved = managed_path
 
+    owned = config.managed_rule_counts()
     kinds_set = frozenset(kinds)
     external: list[ExternalRuleEntry] = []
     for _owning_doc, line in doc.iter_lines(recursive=True):
@@ -120,6 +126,8 @@ def load_external_rule_entries(
             entry_resolved = entry_path.resolve()
         except OSError:
             entry_resolved = entry_path
+        if config.consume_owned(owned, config.rule_signature(line)):
+            continue
         if entry_resolved == managed_resolved:
             continue
         external.append(ExternalRuleEntry(rule=line, source_path=entry_path, lineno=line.lineno))

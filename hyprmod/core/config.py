@@ -9,6 +9,8 @@ doesn't care which one is on disk.
 """
 
 import logging
+import re
+from collections import Counter
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -34,6 +36,7 @@ from hyprland_config import (
     parse_version,
     serialize_any,
     serialize_hyprlang,
+    serialize_lua,
 )
 
 log = logging.getLogger(__name__)
@@ -559,15 +562,224 @@ def to_managed_text(
     return serialize_any(doc, managed_path())
 
 
+# ---------------------------------------------------------------------------
+# Per-module sharding
+# ---------------------------------------------------------------------------
+#
+# When the user's ``hyprland.lua`` is a thin entrypoint over ``modules/*.lua``,
+# writing every managed line to a single trailing ``require`` makes hyprmod's
+# values silently win over the hand-written modules. Instead we splice each
+# feature's lines into the module that owns it, wrapped in a sentinel block so
+# re-saves replace (never duplicate) what we wrote. The managed file stays as
+# hyprmod's canonical store (read source + Pending-Changes preview) but is no
+# longer required by ``hyprland.lua`` once sharding is active.
+
+_SHARD_BEGIN = "-- >>> hyprmod:begin"
+_SHARD_END = "-- <<< hyprmod:end"
+_SHARD_BLOCK_RE = re.compile(
+    rf"(?ms)^[ \t]*{re.escape(_SHARD_BEGIN)}.*?^[ \t]*{re.escape(_SHARD_END)}[^\n]*\n?"
+)
+
+# Logical feature -> module that owns it. Only files that already exist are
+# sharded, so an unrelated ``modules/`` layout is never written to by accident.
+_SHARD_FILES = {
+    "env": "modules/env.lua",
+    "cursor": "modules/cursor.lua",
+    "input": "modules/input.lua",
+    "decorations": "modules/decorations.lua",
+    "layouts": "modules/layouts.lua",
+    "misc": "modules/misc.lua",
+    "monitor": "modules/monitor.lua",
+    "binds": "modules/binds.lua",
+    "rules": "modules/rules.lua",
+    "autostart": "modules/autostart.lua",
+}
+_SHARD_FALLBACK = "misc"
+
+# Setting prefix -> feature shard.
+_OPTION_SHARDS = {
+    "general": "decorations",
+    "decoration": "decorations",
+    "animations": "decorations",
+    "layout": "layouts",
+    "dwindle": "layouts",
+    "master": "layouts",
+    "scrolling": "layouts",
+    "misc": "misc",
+    "binds": "misc",
+    "input": "input",
+    "cursor": "cursor",
+}
+
+
+def active_shards() -> dict[str, Path] | None:
+    """Map feature -> module path when hyprmod should write into modules.
+
+    Returns ``None`` for single-file configs (the classic managed-file
+    behaviour). Requires Lua mode and a sibling ``modules/`` directory;
+    only already-present module files are ever targeted.
+    """
+    if not is_lua_mode():
+        return None
+    root = user_entry_path().parent
+    if not (root / "modules").is_dir():
+        return None
+    shards = {key: root / rel for key, rel in _SHARD_FILES.items() if (root / rel).exists()}
+    return shards or None
+
+
+def _managed_document() -> Document | None:
+    """Parse hyprmod's managed store, or ``None`` when absent/unparseable."""
+    path = managed_path()
+    if not path.exists():
+        return None
+    try:
+        doc = load_any(path, follow_sources=False, lenient=True)
+    except (OSError, ParseError):
+        return None
+    migrate(doc)
+    return doc
+
+
+def managed_keyword_counts() -> Counter[tuple[str, str]]:
+    """Multiset of ``(key, value)`` keywords hyprmod owns.
+
+    In sharded mode hyprmod splices its lines into the user's module files,
+    so ``lineno`` can no longer mark them (the Lua reader reports
+    ``lineno=0``). Every line hyprmod wrote still exists verbatim in the
+    managed store, so callers subtract these counts from what they read off
+    the live tree; what remains is the user's own config.
+    """
+    counts: Counter[tuple[str, str]] = Counter()
+    doc = _managed_document()
+    if doc is not None:
+        for line in doc.lines:
+            if isinstance(line, Keyword):
+                counts[(line.key, line.value)] += 1
+    return counts
+
+
+def managed_rule_counts() -> Counter[tuple]:
+    """Multiset of rule signatures hyprmod owns (see :func:`managed_keyword_counts`)."""
+    counts: Counter[tuple] = Counter()
+    doc = _managed_document()
+    if doc is not None:
+        for line in doc.lines:
+            if isinstance(line, Rule):
+                counts[rule_signature(line)] += 1
+    return counts
+
+
+def rule_signature(rule: Rule) -> tuple:
+    """Canonical key for comparing an external rule against a managed one."""
+    return (rule.kind, rule.name, rule.enabled, tuple(rule.matchers), tuple(rule.effects))
+
+
+def consume_owned(counter: Counter, key) -> bool:
+    """True (and decrement) while *key* still has an owned occurrence left.
+
+    Sharded mode splices hyprmod's lines into the user's module files, where
+    they cannot be told apart from hand-written ones. Subtracting the multiset
+    of owned entries leaves exactly the user's own config.
+    """
+    if counter.get(key, 0) > 0:
+        counter[key] -= 1
+        return True
+    return False
+
+
+def _shard_for_option(full_key: str) -> str:
+    """Feature shard owning a ``section:leaf`` setting (``misc`` fallback)."""
+    return _OPTION_SHARDS.get(full_key.split(":", 1)[0], _SHARD_FALLBACK)
+
+
+def _env_shard(line: str) -> str:
+    """Route cursor-related env vars to ``cursor``, the rest to ``env``."""
+    var = line.split("=", 1)[-1].split(",", 1)[0].strip()
+    return "cursor" if var.startswith(("XCURSOR", "HYPRCURSOR")) else "env"
+
+
+def _shard_lines(values: dict[str, str], sections: ConfigSections) -> dict[str, list[str]]:
+    """Group the save's lines by the feature shard each belongs to."""
+    groups: dict[str, list[str]] = {}
+
+    def add(key: str, lines: list[str] | None) -> None:
+        if lines:
+            groups.setdefault(key, []).extend(lines)
+
+    for line in sections.env or ():
+        add(_env_shard(line), [line])
+    for key in sorted(values):
+        if not key.startswith("plugin:"):
+            add(_shard_for_option(key), [f"{key} = {values[key]}"])
+    add("decorations", sections.beziers)
+    add("decorations", sections.animations)
+    add("monitor", sections.monitors)
+    add("rules", sections.workspaces)
+    add("binds", sections.binds)
+    add("rules", sections.window_rules)
+    add("rules", sections.layer_rules)
+    add("misc", sections.plugins)
+    add("autostart", sections.exec_)
+    return groups
+
+
+def _shard_block(lines: list[str]) -> str:
+    """Render *lines* as the Lua body stored inside one module's block."""
+    doc = Document()
+    body = "".join(line if line.endswith("\n") else line + "\n" for line in lines)
+    doc.lines.extend(parse_string(body, lenient=True).lines)
+    normalize_rules(doc)
+    return serialize_lua(doc).strip()
+
+
+def _splice_block(text: str, block: str) -> str:
+    """Replace hyprmod's sentinel block in *text*, append one, or drop it."""
+    body = f"{_SHARD_BEGIN}\n{block}\n{_SHARD_END}\n" if block else ""
+    if _SHARD_BLOCK_RE.search(text):
+        return _SHARD_BLOCK_RE.sub(lambda _match: body, text, count=1)
+    if not body:
+        return text
+    if not text:
+        return body
+    sep = "" if text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+    return f"{text}{sep}{body}"
+
+
+def _write_shards(values: dict[str, str], sections: ConfigSections) -> None:
+    """Splice each feature's lines back into its owning module file."""
+    shards = active_shards()
+    if not shards:
+        return
+    per_file: dict[Path, list[str]] = {path: [] for path in shards.values()}
+    for key, lines in _shard_lines(values, sections).items():
+        path = shards.get(key) or shards.get(_SHARD_FALLBACK)
+        if path is None:
+            log.warning("no module shard for %r; keeping lines in the managed file", key)
+            continue
+        per_file[path].extend(lines)
+    for path, lines in per_file.items():
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except OSError:
+            log.warning("cannot read module shard %s", path, exc_info=True)
+            continue
+        merged = _splice_block(existing, _shard_block(lines) if lines else "")
+        if merged != existing:
+            atomic_write(path, merged)
+            log.info("wrote managed block into %s", path)
+
+
 def write_all(
     values: dict[str, str],
     sections: ConfigSections,
     *,
     hyprland_version: str | None = None,
 ) -> None:
-    """Write the managed file in the active format (Hyprlang or Lua)."""
+    """Write the managed file in the active format, then splice into modules."""
     atomic_write(
         managed_path(),
         to_managed_text(values, sections, hyprland_version=hyprland_version),
     )
+    _write_shards(values, sections)
     invalidate_cache()

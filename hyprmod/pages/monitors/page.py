@@ -538,8 +538,13 @@ class MonitorsPage(SectionPage):
         # Find the last matching line (Hyprland semantics).
         # A line refers to ``mon`` if its leading token resolves to it — handles
         # both port-name (``DP-1``) and ``desc:`` forms.
+        # In sharded mode hyprmod's own monitor lines live in the user's module
+        # files, so drop the ones it owns to leave the user's own values.
+        owned = config.managed_keyword_counts()
         parts: list[str] = []
         for kw in user_lines:
+            if config.consume_owned(owned, (kw.key, kw.value)):
+                continue
             p = [s.strip() for s in kw.value.split(",")]
             if p and resolve_identifier(p[0], [mon]) is mon:
                 parts = p
