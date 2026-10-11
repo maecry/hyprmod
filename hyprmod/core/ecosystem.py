@@ -486,11 +486,11 @@ def _preferred_terminal() -> tuple[str, tuple[str, ...]] | None:
     return name, ("-e",)
 
 
-def package_install_command(tool: Tool) -> list[str] | None:
-    """The command that installs *tool*, or ``None`` when pacman is missing."""
+def package_install_command(package: str) -> list[str] | None:
+    """The command that installs *package*, or ``None`` when pacman is missing."""
     if shutil.which("pacman") is None:
         return None
-    return ["sudo", "pacman", "-S", "--needed", tool.package]
+    return ["sudo", "pacman", "-S", "--needed", package]
 
 
 def launch_in_terminal(argv: Sequence[str]) -> bool:

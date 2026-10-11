@@ -9,7 +9,7 @@ from hyprland_config import Rule, coerce_config_value
 from hyprland_socket import HyprlandError
 from hyprland_state import ANIM_LOOKUP, HyprlandState
 
-from hyprmod.core import config, profiles, schema
+from hyprmod.core import config, hyprshutdown, profiles, schema
 from hyprmod.core.bug_report import build_bug_report_url
 from hyprmod.core.ecosystem import TOOLS as ECOSYSTEM_TOOLS
 from hyprmod.core.plugins import parse_plugin_options, serialize
@@ -23,6 +23,7 @@ from hyprmod.pages.binds import BindsPage
 from hyprmod.pages.cursor import CursorPage
 from hyprmod.pages.ecosystem import EcosystemPage
 from hyprmod.pages.env_vars import EnvVarsPage
+from hyprmod.pages.hyprshutdown import HyprshutdownPage
 from hyprmod.pages.layer_rules import LayerRulesPage
 from hyprmod.pages.layouts import LayoutsPage
 from hyprmod.pages.monitors import MonitorsPage
@@ -31,6 +32,7 @@ from hyprmod.pages.plugins import PluginsPage
 from hyprmod.pages.profiles import ProfilesPage
 from hyprmod.pages.section import SectionPage
 from hyprmod.pages.settings import SettingsPage
+from hyprmod.pages.waybar import WaybarPage
 from hyprmod.pages.window_rules import WindowRulesPage
 from hyprmod.pages.workspaces import WorkspacesPage
 from hyprmod.ui import (
@@ -434,6 +436,18 @@ class HyprModWindow(Adw.ApplicationWindow):
             header = self._make_page_header(tool.label)
             self._page_stack.add_named(page.build(header=header), tool.slug)
             self._page_titles[tool.slug] = tool.label
+
+        waybar_page = WaybarPage(self)
+        self._page_stack.add_named(
+            waybar_page.build(header=self._make_page_header("Waybar")), "waybar"
+        )
+        self._page_titles["waybar"] = "Waybar"
+
+        shutdown_page = HyprshutdownPage(self)
+        self._page_stack.add_named(
+            shutdown_page.build(header=self._make_page_header(hyprshutdown.LABEL)), "hyprshutdown"
+        )
+        self._page_titles["hyprshutdown"] = hyprshutdown.LABEL
 
         return groups, groups_by_id
 

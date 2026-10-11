@@ -74,7 +74,7 @@ class EcosystemPage:
     # -- Hints shown when the tool or its config is missing --
 
     def _missing_tool_hint(self) -> Gtk.Widget:
-        command = ecosystem.package_install_command(self.tool)
+        command = ecosystem.package_install_command(self.tool.package)
         if command is None:
             return make_inline_hint(
                 f"{self.tool.label} is not installed and pacman was not found. "

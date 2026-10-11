@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from gi.repository import Adw, Gtk
 
+from hyprmod.core import hyprshutdown, waybar
 from hyprmod.core.ecosystem import TOOLS as ECOSYSTEM_TOOLS
 from hyprmod.ui.icons import (
     AUTOSTART_ICON,
@@ -226,6 +227,8 @@ class Sidebar:
         ecosystem = new_category("Ecosystem")
         for tool in ECOSYSTEM_TOOLS:
             add_row(ecosystem, tool.slug, tool.label, tool.icon)
+        add_row(ecosystem, "waybar", "Waybar", waybar.ICON)
+        add_row(ecosystem, "hyprshutdown", hyprshutdown.LABEL, hyprshutdown.ICON)
 
         advanced = new_category("Advanced")
         add_schema_row(advanced, "xwayland")

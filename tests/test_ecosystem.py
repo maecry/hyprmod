@@ -210,11 +210,11 @@ class TestDefaultDocument:
 class TestCommands:
     def test_install_command_needs_pacman(self, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda _name: None)
-        assert ecosystem.package_install_command(ecosystem.HYPRIDLE) is None
+        assert ecosystem.package_install_command(ecosystem.HYPRIDLE.package) is None
 
     def test_install_command_uses_pacman(self, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
-        command = ecosystem.package_install_command(ecosystem.HYPRLOCK)
+        command = ecosystem.package_install_command(ecosystem.HYPRLOCK.package)
         assert command == ["sudo", "pacman", "-S", "--needed", "hyprlock"]
 
     def test_terminal_command_prefers_the_configured_terminal(self, monkeypatch):

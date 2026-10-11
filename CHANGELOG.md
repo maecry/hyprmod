@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Waybar page: edits `~/.config/waybar/config.jsonc` directly, so your comments and layout survive every save. Bar-level settings, the module lists for the left/center/right sections, and a typed editor for each module (booleans, numbers, text and JSON values) are all editable. The option reference for 51 modules is generated from waybar's own man pages, and a module you have not configured yet can be added from the list.
+- Hyprshutdown page: hyprshutdown has no config file, so the page offers to install the package and builds a `hyprshutdown` command line from `--vt`, `--top-label` and `--post-cmd` instead, then adds it as a keybind in your own binds module.
 - Pages for the Hypr ecosystem companion tools: hypridle, hyprlock, hyprlauncher and hyprsunset. Each page is a typed editor for that tool's own `~/.config/hypr/<tool>.conf` and writes changes back into it, so hand-written options, comments and blocks HyprMod does not know about are kept. A tool that is missing offers to install it, and a missing config file gets a starter file with the documented defaults (hypridle and hyprlock need a config before they run at all).
 
 ### Changed

@@ -417,6 +417,22 @@ class BindsPage(SectionPage):
         )
         dialog.present(self._window)
 
+    def find_conflicts(self, bind: BindData, exclude_idx: int = -1) -> list[BindData]:
+        """Binds that already use *bind*'s combination."""
+        return self._find_conflicts(bind, exclude_idx)
+
+    def add_bind(self, bind: BindData) -> bool:
+        """Add a bind on behalf of another page, through the usual undo path."""
+        if not BindEditDialog.can_represent(bind):
+            return False
+        owned_binds = self._owned_binds
+        with self._undo_track():
+            self._apply_bind_live(bind)
+            owned_binds.append_new(bind)
+        self._notify_dirty()
+        self._rebuild_list()
+        return True
+
     def _on_edit_at(self, idx):
         owned_binds = self._owned_binds
         if idx < 0 or idx >= len(owned_binds):
