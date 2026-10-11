@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from gi.repository import Adw, Gtk
 
+from hyprmod.core.ecosystem import TOOLS as ECOSYSTEM_TOOLS
 from hyprmod.ui.icons import (
     AUTOSTART_ICON,
     BINDS_ICON,
@@ -219,6 +220,12 @@ class Sidebar:
         startup = new_category("Startup")
         add_row(startup, "autostart", "Autostart", AUTOSTART_ICON)
         add_row(startup, "env_vars", "Env Variables", ENV_VARS_ICON)
+
+        # Companion tools from the Hypr ecosystem. Each row opens a typed
+        # editor for that tool's own config file.
+        ecosystem = new_category("Ecosystem")
+        for tool in ECOSYSTEM_TOOLS:
+            add_row(ecosystem, tool.slug, tool.label, tool.icon)
 
         advanced = new_category("Advanced")
         add_schema_row(advanced, "xwayland")

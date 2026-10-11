@@ -11,6 +11,7 @@ from hyprland_state import ANIM_LOOKUP, HyprlandState
 
 from hyprmod.core import config, profiles, schema
 from hyprmod.core.bug_report import build_bug_report_url
+from hyprmod.core.ecosystem import TOOLS as ECOSYSTEM_TOOLS
 from hyprmod.core.plugins import parse_plugin_options, serialize
 from hyprmod.core.settings import apply_saved_config_path, open_settings
 from hyprmod.core.state import AppState
@@ -20,6 +21,7 @@ from hyprmod.pages.animations import AnimationsPage
 from hyprmod.pages.autostart import AutostartPage
 from hyprmod.pages.binds import BindsPage
 from hyprmod.pages.cursor import CursorPage
+from hyprmod.pages.ecosystem import EcosystemPage
 from hyprmod.pages.env_vars import EnvVarsPage
 from hyprmod.pages.layer_rules import LayerRulesPage
 from hyprmod.pages.layouts import LayoutsPage
@@ -424,6 +426,14 @@ class HyprModWindow(Adw.ApplicationWindow):
             header = self._make_page_header(title, with_pending_chip=with_chip)
             self._page_stack.add_named(page.build(header=header), slug)
             self._page_titles[slug] = title
+
+        # Companion-tool editors. Each one edits that tool's own config file
+        # in place, so nothing here touches hyprmod's managed file.
+        for tool in ECOSYSTEM_TOOLS:
+            page = EcosystemPage(self, tool)
+            header = self._make_page_header(tool.label)
+            self._page_stack.add_named(page.build(header=header), tool.slug)
+            self._page_titles[tool.slug] = tool.label
 
         return groups, groups_by_id
 
