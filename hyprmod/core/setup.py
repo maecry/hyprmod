@@ -34,6 +34,9 @@ def needs_setup() -> bool:
     tree can't be loaded (no ``lua`` interpreter, a config that fails to
     execute) we fall back to inspecting the entrypoint alone.
     """
+    if config.active_shards():
+        # Modular Lua config loads its modules directly; no include to inject.
+        return False
     entry = config.user_entry_path()
     if not entry.exists():
         return False
@@ -83,6 +86,9 @@ def run_setup() -> None:
     Hyprlang mode: ensure ``managed_conf_path()`` exists, then append
     ``source = …`` to ``hyprland.conf``.
     """
+    if config.active_shards():
+        # Modular Lua config: settings are spliced into the modules on save.
+        return
     entry = config.user_entry_path()
     if config.is_lua_target(entry):
         target = config.managed_lua_path()
